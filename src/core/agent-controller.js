@@ -33,7 +33,6 @@ export class AgentController {
         }));
     }
 
-    // 处理用户消息 - 核心逻辑
     async processUserMessage(sessionId, message, sendResponse) {
         console.log(`🎯 处理用户消息 [${sessionId}]: ${message}`);
 
@@ -46,108 +45,44 @@ export class AgentController {
         }
 
         try {
-            // 1. 如果是新对话，识别工作流
-            if (!session.currentWorkflow) {
-                const workflowResult = await this.identifyWorkflow(message);
+            // 🆕 统一LLM分析：每轮都进行完整的上下文分析
+            console.log(`🧠 开始统一LLM上下文分析...`);
+            console.log(`📊 当前会话状态:`, {
+                hasWorkflow: !!session.currentWorkflow,
+                workflowName: session.currentWorkflow?.name,
+                currentStep: session.currentStep,
+                workflowData: session.workflowData
+            });
 
-                if (!workflowResult.success) {
+            const analysisResult = await this.llmClient.analyzeWithContext(message, session);
+            console.log(`🧠 LLM分析结果:`, analysisResult);
+
+            // 根据分析结果执行不同的操作
+            switch (analysisResult.action) {
+                case 'start_workflow':
+                    return this.handleWorkflowStart(session, analysisResult, sendResponse);
+
+                case 'continue_workflow':
+                    return this.handleWorkflowContinue(session, analysisResult, sendResponse);
+
+                case 'execute_step':
+                    return this.handleStepExecution(session, analysisResult, sendResponse);
+
+                case 'need_more_info':
+                    return this.handleNeedMoreInfo(session, analysisResult, sendResponse);
+
+                case 'chat':
+                    return sendResponse({
+                        type: 'chat_response',
+                        message: analysisResult.response
+                    });
+
+                default:
                     return sendResponse({
                         type: 'need_clarification',
-                        message: '抱歉，我没有理解您的需求。我目前可以帮您：\n1. 下载抖音内容并生成文案\n\n请告诉我具体想要做什么？'
+                        message: analysisResult.question || '请告诉我您想要做什么？'
                     });
-                }
-
-                session.currentWorkflow = workflowResult.workflow;
-                session.currentStep = 0;
-                session.workflowData = {};
-
-                return sendResponse({
-                    type: 'workflow_started',
-                    workflow: workflowResult.workflow.name,
-                    message: `好的！我将帮您${workflowResult.workflow.name}。\n\n第一步：${workflowResult.workflow.steps[0].name}`,
-                    next_step: workflowResult.workflow.steps[0]
-                });
             }
-
-            // 2. 处理当前步骤
-            const currentStep = session.currentWorkflow.steps[session.currentStep];
-            console.log(`📋 执行步骤: ${currentStep.name}`);
-
-            // 3. 提取参数
-            const paramResult = await this.llmClient.extractParameters(message, currentStep);
-
-            if (!paramResult.success) {
-                return sendResponse({
-                    type: 'need_more_info',
-                    message: paramResult.question || `请提供${currentStep.name}所需的信息`,
-                    required_params: currentStep.required_params,
-                    step: currentStep.name
-                });
-            }
-
-            // 4. 执行当前步骤
-            sendResponse({
-                type: 'step_executing',
-                step: currentStep.name,
-                message: `正在执行: ${currentStep.name}...`,
-                progress: 0
-            });
-
-            const stepResult = await this.workflowEngine.executeStep(
-                currentStep,
-                paramResult.params,
-                (progress) => {
-                    sendResponse({
-                        type: 'step_progress',
-                        step: currentStep.name,
-                        progress: progress.progress,
-                        message: progress.message
-                    });
-                }
-            );
-
-            if (!stepResult.success) {
-                return sendResponse({
-                    type: 'step_failed',
-                    step: currentStep.name,
-                    error: stepResult.error,
-                    message: `${currentStep.name}执行失败: ${stepResult.error}`,
-                    retry_available: true
-                });
-            }
-
-            // 5. 保存步骤结果
-            session.workflowData[currentStep.id] = stepResult.data;
-
-            // 6. 检查是否完成所有步骤
-            if (session.currentStep >= session.currentWorkflow.steps.length - 1) {
-                // 工作流完成
-                const finalResult = this.generateFinalResult(session);
-
-                // 重置会话状态
-                session.currentWorkflow = null;
-                session.currentStep = 0;
-                session.workflowData = {};
-
-                return sendResponse({
-                    type: 'workflow_completed',
-                    message: '🎉 任务完成！',
-                    result: finalResult,
-                    summary: this.generateSummary(finalResult)
-                });
-            }
-
-            // 7. 询问是否继续下一步
-            session.currentStep++;
-            const nextStep = session.currentWorkflow.steps[session.currentStep];
-
-            return sendResponse({
-                type: 'step_completed',
-                completed_step: currentStep.name,
-                result: stepResult.data,
-                next_step: nextStep.name,
-                message: `✅ ${currentStep.name}已完成！\n\n是否继续执行下一步：${nextStep.name}？\n\n请回复"继续"或告诉我${nextStep.description}`
-            });
 
         } catch (error) {
             console.error('❌ 处理用户消息失败:', error);
@@ -158,41 +93,17 @@ export class AgentController {
             });
         }
     }
-
-    // 识别工作流（简化版本 - 关键词匹配）
-    async identifyWorkflow(message) {
-        const lowerMessage = message.toLowerCase();
-        if ((lowerMessage.includes('发布') || lowerMessage.includes('上传')) &&
-            (lowerMessage.includes('视频') || lowerMessage.includes('抖音'))) {
-            return {
-                success: true,
-                workflow: WORKFLOWS.VIDEO_PUBLISH,
-                confidence: 0.9
-            };
-        }
-        // 简单关键词匹配
-        if ((lowerMessage.includes('抖音') || lowerMessage.includes('douyin')) &&
-            (lowerMessage.includes('文案') || lowerMessage.includes('内容'))) {
-            return {
-                success: true,
-                workflow: WORKFLOWS.DOUYIN_CONTENT_CREATION,
-                confidence: 0.9
-            };
-        }
-
-        if (lowerMessage.includes('下载') && lowerMessage.includes('抖音')) {
-            return {
-                success: true,
-                workflow: WORKFLOWS.DOUYIN_CONTENT_CREATION,
-                confidence: 0.8
-            };
-        }
-
-        return {
-            success: false,
-            message: '无法识别工作流'
+    // 🆕 根据任务类型获取工作流
+    getWorkflowByType(taskType) {
+        const workflowMap = {
+            'douyin_content_creation': WORKFLOWS.DOUYIN_CONTENT_CREATION,
+            'video_publish': WORKFLOWS.VIDEO_PUBLISH,
+            'content_generation': WORKFLOWS.DOUYIN_CONTENT_CREATION // 复用现有工作流
         };
+
+        return workflowMap[taskType] || null;
     }
+
 
     // 生成最终结果
     generateFinalResult(session) {
@@ -223,5 +134,174 @@ export class AgentController {
         summary += `\n⏰ 完成时间: ${new Date(result.completed_at).toLocaleString()}`;
 
         return summary;
+    }
+    async handleWorkflowStart(session, analysisResult, sendResponse) {
+        const workflow = this.getWorkflowByType(analysisResult.workflow_type);
+        if (!workflow) {
+            return sendResponse({
+                type: 'need_clarification',
+                message: '抱歉，暂不支持该类型的任务。'
+            });
+        }
+
+        // 设置工作流和参数
+        session.currentWorkflow = workflow;
+        session.currentStep = 0;
+        session.workflowData = analysisResult.all_params;
+
+        console.log(`✅ 启动工作流: ${workflow.name}, 已提取参数:`, session.workflowData);
+
+        return sendResponse({
+            type: 'task_started',
+            workflow: workflow.name,
+            message: analysisResult.question,
+            extracted_info: analysisResult.all_params,
+            next_step: workflow.steps[0].name
+        });
+    }
+
+    async handleWorkflowContinue(session, analysisResult, sendResponse) {
+        // 更新参数但不执行
+        session.workflowData = {
+            ...session.workflowData,
+            ...analysisResult.all_params
+        };
+
+        return sendResponse({
+            type: 'need_more_info',
+            message: analysisResult.question,
+            extracted_info: analysisResult.all_params,
+            missing_params: analysisResult.missing_params,
+            step: session.currentWorkflow.steps[session.currentStep].name
+        });
+    }
+
+    async handleStepExecution(session, analysisResult, sendResponse) {
+        console.log(`🔄 执行步骤处理 - 步骤: ${session.currentWorkflow.steps[session.currentStep].name}`);
+        // 更新参数
+        session.workflowData = {
+            ...session.workflowData,
+            ...analysisResult.all_params
+        };
+        console.log(`📋 合并后的完整参数:`, session.workflowData);
+
+        // 复用现有的步骤执行逻辑
+        return this.executeCurrentStep(session, sendResponse);
+    }
+
+    async handleNeedMoreInfo(session, analysisResult, sendResponse) {
+        // 🆕 关键修复：设置工作流状态和保存参数
+        if (!session.currentWorkflow && analysisResult.workflow_type) {
+            const workflow = this.getWorkflowByType(analysisResult.workflow_type);
+            if (workflow) {
+                session.currentWorkflow = workflow;
+                session.currentStep = 0;
+                session.workflowData = analysisResult.all_params || {};
+
+                console.log(`✅ 设置工作流状态: ${workflow.name}`);
+                console.log(`📋 保存已提取参数:`, session.workflowData);
+            }
+        } else {
+            // 如果已有工作流，合并参数
+            session.workflowData = {
+                ...session.workflowData,
+                ...analysisResult.all_params
+            };
+            console.log(`📋 合并参数:`, session.workflowData);
+        }
+
+        return sendResponse({
+            type: 'need_more_info',
+            message: analysisResult.question,
+            required_params: analysisResult.missing_params,
+            step: session.currentWorkflow?.steps[session.currentStep]?.name || 'prepare_content',
+            extracted_info: session.workflowData  // 🆕 返回已提取的信息
+        });
+    }
+
+    // 🆕 提取步骤执行逻辑
+    async executeCurrentStep(session, sendResponse) {
+        const currentStep = session.currentWorkflow.steps[session.currentStep];
+        console.log(`📋 执行步骤: ${currentStep.name}`);
+
+        // 验证参数是否齐全
+        const missingParams = currentStep.required_params.filter(
+            param => !session.workflowData[param]
+        );
+
+        if (missingParams.length > 0) {
+            console.log(`⚠️ 仍缺少必需参数:`, missingParams);
+            return sendResponse({
+                type: 'need_more_info',
+                message: `还需要以下信息：${missingParams.join('、')}`,
+                required_params: missingParams,
+                step: currentStep.name,
+                extracted_info: session.workflowData
+            });
+        }
+
+        // 执行当前步骤
+        sendResponse({
+            type: 'step_executing',
+            step: currentStep.name,
+            message: `正在执行: ${currentStep.name}...`,
+            progress: 0
+        });
+
+        const stepResult = await this.workflowEngine.executeStep(
+            currentStep,
+            session.workflowData,  // 使用合并后的参数
+            (progress) => {
+                sendResponse({
+                    type: 'step_progress',
+                    step: currentStep.name,
+                    progress: progress.progress,
+                    message: progress.message
+                });
+            }
+        );
+
+        if (!stepResult.success) {
+            return sendResponse({
+                type: 'step_failed',
+                step: currentStep.name,
+                error: stepResult.error,
+                message: `${currentStep.name}执行失败: ${stepResult.error}`,
+                retry_available: true
+            });
+        }
+
+        // 保存步骤结果
+        session.workflowData[currentStep.id] = stepResult.data;
+
+        // 检查是否完成所有步骤
+        if (session.currentStep >= session.currentWorkflow.steps.length - 1) {
+            // 工作流完成
+            const finalResult = this.generateFinalResult(session);
+
+            // 重置会话状态
+            session.currentWorkflow = null;
+            session.currentStep = 0;
+            session.workflowData = {};
+
+            return sendResponse({
+                type: 'workflow_completed',
+                message: '🎉 任务完成！',
+                result: finalResult,
+                summary: this.generateSummary(finalResult)
+            });
+        }
+
+        // 继续下一步
+        session.currentStep++;
+        const nextStep = session.currentWorkflow.steps[session.currentStep];
+
+        return sendResponse({
+            type: 'step_completed',
+            completed_step: currentStep.name,
+            result: stepResult.data,
+            next_step: nextStep.name,
+            message: `✅ ${currentStep.name}已完成！\n\n继续执行下一步：${nextStep.name}...`
+        });
     }
 }

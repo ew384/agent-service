@@ -9,182 +9,262 @@ export class LLMClient {
 
         console.log(`🧠 LLM客户端初始化: ${this.apiUrl}/${this.apiKey}/chat/${this.provider}`);
     }
+    // 🆕 统一的上下文感知分析
+    async analyzeWithContext(userInput, session) {
+        console.log(`🔍 统一上下文分析 - 输入: ${userInput}`);
 
-    // 提取参数 - 核心功能
-    async extractParameters(userInput, stepConfig) {
-        console.log(`🔍 提取参数 - 步骤: ${stepConfig.name}`);
-        console.log(`📥 用户输入: ${userInput}`);
-
-        // 构建提示词
-        const prompt = this.buildParameterExtractionPrompt(userInput, stepConfig);
+        const prompt = this.buildContextAnalysisPrompt(userInput, session);
 
         try {
-            const response = await this.callLLM(prompt);
-
-            if (!response.success) {
-                throw new Error(response.error || 'LLM调用失败');
-            }
-
-            // 解析LLM响应
-            const parsed = this.parseParameterResponse(response.response, stepConfig);
-            console.log(`✅ 参数提取结果:`, parsed);
-
+            const response = await this.callLLM(prompt, 3); // 重试3次
+            const parsed = this.parseContextResponse(response.response);
+            console.log(`✅ 统一分析结果:`, parsed);
             return parsed;
-
         } catch (error) {
-            console.error('❌ 参数提取失败:', error);
+            console.error('❌ 统一分析失败:', error);
             return {
-                success: false,
-                error: error.message,
-                question: `请提供${stepConfig.name}所需的信息`
+                action: 'need_clarification',
+                question: '请告诉我您想要做什么？我可以帮您下载抖音内容、生成文案或发布视频。'
             };
         }
     }
 
-    // 构建参数提取提示词
-    buildParameterExtractionPrompt(userInput, stepConfig) {
-        return `请从用户输入中提取以下参数：
+    buildContextAnalysisPrompt(userInput, session) {
+        const hasWorkflow = !!session.currentWorkflow;
+        const workflowData = session.workflowData || {};
 
-步骤名称: ${stepConfig.name}
-步骤描述: ${stepConfig.description}
+        let prompt = `请帮我分析这个用户请求，并提供结构化的分析结果。
+    
+    用户说: "${userInput}"`;
 
-必需参数: ${stepConfig.required_params.join(', ')}
-可选参数: ${stepConfig.optional_params ? stepConfig.optional_params.join(', ') : '无'}
+        if (hasWorkflow) {
+            prompt += `
+    
+    当前对话背景:
+    - 正在处理: ${session.currentWorkflow.name}
+    - 进行到步骤: ${session.currentStep + 1}/${session.currentWorkflow.steps.length}
+    - 当前步骤: ${session.currentWorkflow.steps[session.currentStep].name}
+    - 需要的参数: ${session.currentWorkflow.steps[session.currentStep].required_params.join(', ')}
+    
+    已经收集到的信息:
+    ${JSON.stringify(workflowData, null, 2)}`;
+        } else {
+            prompt += `
+    
+    当前对话背景: 这是新的对话开始`;
+        }
 
-用户输入: "${userInput}"
-
-请分析用户输入，提取相关参数。如果缺少必需参数，请生成问题询问用户。
-
-返回JSON格式：
-{
-  "has_all_required": true/false,
-  "extracted_params": {
-    "param_name": "param_value"
-  },
-  "missing_params": ["missing_param1"],
-  "question": "如果缺少参数，询问用户的问题"
-}
-
-特别注意：
-- 抖音链接格式：https://www.douyin.com/video/xxx 或 https://v.douyin.com/xxx
-- 如果用户提到"继续"，设置continue为true
-- 文案主题和风格需要明确`;
+        prompt += `
+    
+    请分析用户的需求类型:
+    - 抖音内容下载和创作
+    - 视频发布到社交平台  
+    - 纯文案生成
+    - 日常对话
+    
+    请提取用户提到的所有相关信息(账号、平台、文件路径、标题、描述等)，并判断下一步应该:
+    - 开始新任务
+    - 继续当前任务
+    - 执行操作(信息已齐全)
+    - 询问更多信息
+    - 普通对话回复
+    
+    请用这样的格式来组织你的分析:
+    
+    {
+      "需求类型": "具体的任务类型",
+      "下一步操作": "建议的行动",
+      "提取的信息": {
+        "账号": "用户的账号",
+        "平台": "目标平台",
+        "文件": "文件路径",
+        "标题": "内容标题", 
+        "描述": "内容描述"
+      },
+      "还需要的信息": ["缺少的信息列表"],
+      "回复用户": "给用户的回复内容",
+      "分析说明": "你的分析思路"
     }
+    
+    请确保保留所有之前已经收集到的信息，并与新信息合并。`;
 
-    // 解析LLM的参数提取响应
-    parseParameterResponse(llmResponse, stepConfig) {
+        return prompt;
+    }
+    // 🆕 解析上下文响应
+    parseContextResponse(llmResponse) {
         try {
-            // 尝试从响应中提取JSON
-            const jsonMatch = llmResponse.match(/\{[\s\S]*\}/);
+            const responseStr = typeof llmResponse === 'string' ? llmResponse : JSON.stringify(llmResponse);
+
+            // 更灵活的JSON提取
+            const jsonMatch = responseStr.match(/\{[\s\S]*?\}(?=\s*$|$)/);
             if (!jsonMatch) {
-                // 如果没有JSON，进行简单的关键词匹配
-                return this.fallbackParameterExtraction(llmResponse, stepConfig);
+                console.warn('⚠️ 未找到JSON，使用文本解析');
+                return this.parseTextResponse(responseStr);
             }
 
             const parsed = JSON.parse(jsonMatch[0]);
 
-            // 验证必需参数
-            const missingRequired = stepConfig.required_params.filter(
-                param => !parsed.extracted_params || !parsed.extracted_params[param]
-            );
-
+            // 映射到标准格式
             return {
-                success: missingRequired.length === 0,
-                params: parsed.extracted_params || {},
-                missing_params: missingRequired,
-                question: parsed.question || null
+                action: this.mapToAction(parsed),
+                workflow_type: this.mapToWorkflowType(parsed),
+                all_params: this.extractParams(parsed),
+                missing_params: this.extractMissingParams(parsed),
+                question: parsed["回复用户"] || parsed.question || '请告诉我您需要什么帮助？',
+                reasoning: parsed["分析说明"] || parsed.reasoning || ''
             };
 
         } catch (error) {
-            console.error('❌ 解析LLM响应失败:', error);
-            return this.fallbackParameterExtraction(llmResponse, stepConfig);
+            console.error('❌ JSON解析失败:', error);
+            return this.parseTextResponse(llmResponse);
         }
     }
 
-    // 备用参数提取（关键词匹配）
-    fallbackParameterExtraction(response, stepConfig) {
-        const params = {};
-        const lowerResponse = response.toLowerCase();
-        // 检测视频发布意图
-        if (stepConfig.required_params.includes('video_file')) {
-            // 检查是否提到上传的视频
-            if (lowerResponse.includes('上传') || lowerResponse.includes('视频')) {
-                params.video_file = './videoFile/demo.mp4'; // 默认路径，实际需要文件上传逻辑
-            }
+    // 新增辅助方法
+    mapToAction(parsed) {
+        const operation = parsed["下一步操作"] || '';
+
+        if (operation.includes('开始') || operation.includes('新任务')) {
+            return 'start_workflow';
+        } else if (operation.includes('继续')) {
+            return 'continue_workflow';
+        } else if (operation.includes('执行') || operation.includes('齐全')) {
+            return 'execute_step';
+        } else if (operation.includes('询问') || operation.includes('更多')) {
+            return 'need_more_info';
+        } else if (operation.includes('对话') || operation.includes('聊天')) {
+            return 'chat';
         }
 
-        // 提取账号信息
-        if (stepConfig.required_params.includes('account')) {
-            const accountMatch = response.match(/账号[：:]?\s*(\w+)/);
-            if (accountMatch) {
-                params.account = accountMatch[1];
-            } else if (lowerResponse.includes('andy0919')) {
-                params.account = 'Andy0919';
-            }
+        return 'need_more_info';
+    }
+
+    mapToWorkflowType(parsed) {
+        const taskType = parsed["需求类型"] || '';
+
+        if (taskType.includes('发布') || taskType.includes('视频')) {
+            return 'video_publish';
+        } else if (taskType.includes('抖音') || taskType.includes('下载')) {
+            return 'douyin_content_creation';
+        } else if (taskType.includes('文案')) {
+            return 'content_generation';
         }
 
-        // 检测是否需要自动生成标题描述
-        if (lowerResponse.includes('帮我想') || lowerResponse.includes('你来') || lowerResponse.includes('自动')) {
-            params.auto_generate = true;
-        }
-        // 检查是否是继续指令
-        if (lowerResponse.includes('继续') || lowerResponse.includes('continue') || lowerResponse.includes('下一步')) {
-            params.continue = true;
-        }
+        return 'video_publish';
+    }
 
-        // 提取抖音链接
-        if (stepConfig.required_params.includes('douyin_url')) {
-            const urlMatch = response.match(/(https?:\/\/[^\s]+douyin[^\s]*)/i);
-            if (urlMatch) {
-                params.douyin_url = urlMatch[1];
-            }
-        }
-
-        // 提取主题
-        if (stepConfig.required_params.includes('topic')) {
-            // 寻找主题相关的关键词
-            const topicKeywords = ['主题', '关于', '话题', '内容'];
-            for (const keyword of topicKeywords) {
-                if (lowerResponse.includes(keyword)) {
-                    // 简单提取：取关键词后的内容
-                    const index = lowerResponse.indexOf(keyword);
-                    const afterKeyword = response.substring(index + keyword.length).trim();
-                    const topicMatch = afterKeyword.match(/[^\s，。！？]{2,20}/);
-                    if (topicMatch) {
-                        params.topic = topicMatch[0];
-                        break;
-                    }
-                }
-            }
-
-            // 如果没找到明确主题，使用默认值
-            if (!params.topic && lowerResponse.includes('旅行')) {
-                params.topic = '旅行';
-            }
-        }
-
-        const missingRequired = stepConfig.required_params.filter(param => !params[param]);
+    extractParams(parsed) {
+        const info = parsed["提取的信息"] || {};
 
         return {
-            success: missingRequired.length === 0,
-            params: params,
-            missing_params: missingRequired,
-            question: missingRequired.length > 0 ? `请提供：${missingRequired.join('、')}` : null
+            account: info["账号"] || info.account || null,
+            platform: info["平台"] || info.platform || null,
+            video_file: info["文件"] || info.video_file || null,
+            title: info["标题"] || info.title || null,
+            description: info["描述"] || info.description || null
         };
     }
 
-    // 调用LLM API
+    extractMissingParams(parsed) {
+        const missing = parsed["还需要的信息"] || parsed.missing_params || [];
+        return Array.isArray(missing) ? missing : [];
+    }
+
+    // 纯文本解析备用方案
+    parseTextResponse(text) {
+        console.log('🔄 使用文本解析模式');
+
+        // 基于关键词的简单解析
+        const lowerText = text.toLowerCase();
+
+        if (lowerText.includes('发布') && lowerText.includes('视频')) {
+            return {
+                action: 'start_workflow',
+                workflow_type: 'video_publish',
+                all_params: this.extractParamsFromText(text),
+                missing_params: ['video_file', 'title', 'description'],
+                question: '请提供视频文件路径、标题和描述信息。'
+            };
+        }
+
+        return {
+            action: 'need_clarification',
+            question: '请告诉我您想要做什么？'
+        };
+    }
+    fallbackContextParsing(response, session = null) {
+        const responseStr = String(response || '');
+        const lowerResponse = responseStr.toLowerCase();
+
+        // 🆕 获取历史参数
+        const historicalParams = session?.workflowData || {};
+        console.log(`🔄 兜底解析，历史参数:`, historicalParams);
+
+        // 基本的意图识别
+        if (lowerResponse.includes('你好') || lowerResponse.includes('能做什么')) {
+            return {
+                action: 'chat',
+                response: '你好！我可以帮您下载抖音内容、生成文案或发布视频。请告诉我您想要做什么？'
+            };
+        }
+
+        // 🆕 智能合并参数
+        const all_params = { ...historicalParams }; // 先复制历史参数
+
+        // 从当前输入提取新参数
+        if (lowerResponse.includes('视频文件') || lowerResponse.includes('路径')) {
+            const pathMatch = responseStr.match(/[./][\w/.-]+\.mp4/);
+            if (pathMatch) {
+                all_params.video_file = pathMatch[0];
+            }
+        }
+
+        if (lowerResponse.includes('标题')) {
+            const titleMatch = responseStr.match(/标题[是：]*([^，。]+)/);
+            if (titleMatch) {
+                all_params.title = titleMatch[1].trim();
+            }
+        }
+
+        if (lowerResponse.includes('描述') || lowerResponse.includes('#')) {
+            const descMatch = responseStr.match(/描述[是：]*(.+)/);
+            if (descMatch) {
+                all_params.description = descMatch[1].trim();
+            }
+        }
+
+        // 判断是否有足够参数执行
+        const requiredParams = ['account', 'platform', 'video_file', 'title', 'description'];
+        const missingParams = requiredParams.filter(param => !all_params[param]);
+
+        console.log(`📋 兜底分析结果:`, { all_params, missingParams });
+
+        if (missingParams.length === 0) {
+            return {
+                action: 'execute_step',
+                workflow_type: 'video_publish',
+                all_params: all_params,
+                missing_params: [],
+                question: '开始执行视频发布...'
+            };
+        } else {
+            return {
+                action: 'need_more_info',
+                workflow_type: 'video_publish',
+                all_params: all_params,
+                missing_params: missingParams,
+                question: `请提供：${missingParams.join('、')}`
+            };
+        }
+    }
     async callLLM(prompt) {
         const url = `${this.apiUrl}/${this.apiKey}/chat/${this.provider}`;
-
         console.log(`🔗 调用LLM: ${url}`);
 
         try {
             const response = await fetch(url, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     prompt: prompt,
                     newChat: false,
@@ -203,10 +283,27 @@ export class LLMClient {
                 throw new Error(data.error || 'LLM API返回错误');
             }
 
+            // 🆕 处理对话历史，提取最后一条assistant消息
+            let actualResponse = data.response;
+
+            if (typeof data.response === 'object' && data.response.messages) {
+                // 找到最后一条assistant消息
+                const messages = data.response.messages;
+                const lastAssistantMessage = messages.slice().reverse().find(msg => msg.role === 'assistant');
+
+                if (lastAssistantMessage && lastAssistantMessage.content) {
+                    actualResponse = lastAssistantMessage.content;
+                    console.log('🎯 提取最后一条assistant消息:', actualResponse);
+                } else {
+                    console.warn('⚠️ 未找到assistant消息，使用原始响应');
+                    actualResponse = JSON.stringify(data.response);
+                }
+            }
+
             return {
                 success: true,
-                response: data.response,
-                conversationId: data.conversationId
+                response: actualResponse,
+                conversationId: data.conversationId || data.response?.id
             };
 
         } catch (error) {

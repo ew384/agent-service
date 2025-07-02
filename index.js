@@ -48,8 +48,13 @@ app.post('/api/sessions', (req, res) => {
 });
 
 // WebSocket 服务器
-const wss = new WebSocketServer({ port: WS_PORT });
-
+const wss = new WebSocketServer({
+    port: WS_PORT,
+    // 🆕 增加配置
+    maxListeners: 20, // 增加最大监听器数量
+    perMessageDeflate: false, // 禁用压缩减少内存使用
+});
+wss.setMaxListeners(20);
 wss.on('connection', (ws, req) => {
     console.log('🔗 新的WebSocket连接');
 
@@ -61,19 +66,19 @@ wss.on('connection', (ws, req) => {
     ws.sessionId = sessionId;
     ws.isAlive = true;
 
-    // 发送欢迎消息
+    // 发送欢迎消息（保持不变）
     ws.send(JSON.stringify({
         type: 'welcome',
         sessionId: sessionId,
-        message: '👋 欢迎使用AI Agent服务！我可以帮您：\n1. 下载抖音内容并生成文案\n2. 更多功能开发中...\n\n请告诉我您想要做什么？',
+        message: '👋 欢迎使用AI Agent服务！我可以帮您：\n1. 下载抖音内容并生成文案\n2. 发布视频到抖音平台\n3. 生成各种文案内容\n\n请告诉我您想要做什么？',
         available_commands: [
-            '下载抖音视频并生成旅行文案',
-            '帮我下载 [抖音链接] 的音频',
-            '生成关于非洲旅行的文案'
+            '帮我把视频发布到抖音我的账号',
+            '下载抖音视频并分析生成旅行文案',
+            '生成关于营销视频的文案'
         ]
     }));
 
-    // 处理消息
+    // 处理消息（保持不变）
     ws.on('message', async (data) => {
         try {
             const message = JSON.parse(data.toString());
@@ -94,11 +99,19 @@ wss.on('connection', (ws, req) => {
             }
         } catch (error) {
             console.error('❌ 处理WebSocket消息失败:', error);
-            ws.send(JSON.stringify({
-                type: 'error',
-                message: '消息处理失败，请重试'
-            }));
+            if (ws.readyState === ws.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'error',
+                    message: '消息处理失败，请重试'
+                }));
+            }
         }
+    });
+
+    // 🆕 处理错误
+    ws.on('error', (error) => {
+        console.error('❌ WebSocket连接错误:', error);
+        agentController.deleteSession(sessionId);
     });
 
     // 处理连接关闭
@@ -111,6 +124,11 @@ wss.on('connection', (ws, req) => {
     ws.on('pong', () => {
         ws.isAlive = true;
     });
+});
+
+// 🆕 处理WebSocket服务器错误
+wss.on('error', (error) => {
+    console.error('❌ WebSocket服务器错误:', error);
 });
 
 // 心跳检测定时器
@@ -141,9 +159,36 @@ app.listen(HTTP_PORT, () => {
 // 优雅关闭
 process.on('SIGINT', () => {
     console.log('\n🛑 正在关闭服务...');
-    clearInterval(heartbeatInterval);
+
+    // 清理心跳定时器
+    if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+        console.log('✅ 心跳定时器已清理');
+    }
+
+    // 关闭所有WebSocket连接
+    console.log('🔌 关闭WebSocket连接...');
+    wss.clients.forEach((ws) => {
+        if (ws.readyState === ws.OPEN) {
+            ws.terminate(); // 强制关闭
+        }
+    });
+
+    // 关闭WebSocket服务器
     wss.close(() => {
         console.log('✅ WebSocket服务已关闭');
-        process.exit(0);
     });
+
+    console.log('✅ 服务关闭完成');
+
+    // 短暂延迟后退出
+    setTimeout(() => {
+        process.exit(0);
+    }, 1000);
+});
+
+// 🆕 添加其他信号处理
+process.on('SIGTERM', () => {
+    console.log('收到SIGTERM信号，正在关闭服务...');
+    process.emit('SIGINT');
 });

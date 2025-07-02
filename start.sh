@@ -49,12 +49,12 @@ echo "   LLM提供商: $LLM_PROVIDER"
 echo "🔍 检查依赖服务..."
 
 # 检查LLM服务
-echo "   检查LLM服务 ($LLM_API_URL)..."
-if curl -s -f "$LLM_API_URL/$LLM_API_KEY/chat/$LLM_PROVIDER" -X POST -H "Content-Type: application/json" -d '{"prompt":"test"}' >/dev/null 2>&1; then
-    echo "   ✅ LLM服务可用"
-else
-    echo "   ⚠️ LLM服务暂时不可用，服务仍将启动"
-fi
+#echo "   检查LLM服务 ($LLM_API_URL)..."
+#if curl -s -f "$LLM_API_URL/$LLM_API_KEY/chat/$LLM_PROVIDER" -X POST -H "Content-Type: application/json" -d '{"prompt":"test"}' >/dev/null 2>&1; then
+#    echo "   ✅ LLM服务可用"
+#else
+#    echo "   ⚠️ LLM服务暂时不可用，服务仍将启动"
+#fi
 
 # 检查抖音下载服务
 echo "   检查抖音下载服务..."

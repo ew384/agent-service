@@ -85,6 +85,29 @@ export class ContentGenerator {
 
     // 构建文案生成提示词
     buildContentPrompt(topic, style, length, keywords, sourceFile, contentType) {
+        if (topic === 'video_publish_auto') {
+            return `请为抖音视频生成发布标题和描述：
+    
+    视频类型: agent操作指导类视频
+    目标平台: 抖音
+    
+    请生成以下内容并以JSON格式返回：
+    {
+      "title": "吸引人的标题（8-20字）",
+      "description": "简洁描述 #相关标签1 #相关标签2 #相关标签3"
+    }
+    
+    要求：
+    1. 标题要吸引人且适合抖音用户
+    2. 描述要简洁，包含2-3个热门相关标签
+    3. 标签格式：#标签名称（标签间用空格分隔）
+    4. 内容要适合agent/AI操作指导类视频
+    5. 标题控制在8-20字之间
+    
+    示例格式：
+    - 标题：AI智能助手操作教程
+    - 描述：超实用的AI操作技巧分享 #AI教程 #智能助手 #操作指南`;
+        }
         let prompt = `请为以下主题生成高质量的文案内容：
 
 主题: ${topic}

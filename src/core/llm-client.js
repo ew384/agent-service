@@ -105,7 +105,28 @@ export class LLMClient {
     fallbackParameterExtraction(response, stepConfig) {
         const params = {};
         const lowerResponse = response.toLowerCase();
+        // 检测视频发布意图
+        if (stepConfig.required_params.includes('video_file')) {
+            // 检查是否提到上传的视频
+            if (lowerResponse.includes('上传') || lowerResponse.includes('视频')) {
+                params.video_file = './videoFile/demo.mp4'; // 默认路径，实际需要文件上传逻辑
+            }
+        }
 
+        // 提取账号信息
+        if (stepConfig.required_params.includes('account')) {
+            const accountMatch = response.match(/账号[：:]?\s*(\w+)/);
+            if (accountMatch) {
+                params.account = accountMatch[1];
+            } else if (lowerResponse.includes('andy0919')) {
+                params.account = 'Andy0919';
+            }
+        }
+
+        // 检测是否需要自动生成标题描述
+        if (lowerResponse.includes('帮我想') || lowerResponse.includes('你来') || lowerResponse.includes('自动')) {
+            params.auto_generate = true;
+        }
         // 检查是否是继续指令
         if (lowerResponse.includes('继续') || lowerResponse.includes('continue') || lowerResponse.includes('下一步')) {
             params.continue = true;

@@ -1,6 +1,24 @@
 // src/config/workflows.js - MVP工作流配置
 export const WORKFLOWS = {
     // MVP版本：抖音下载 + 文案生成
+    VIDEO_PUBLISH: {
+        id: 'video-publish',
+        name: '视频发布到抖音',
+        description: '将上传的视频发布到指定抖音账号',
+        category: 'publish',
+        estimated_time: 30,
+
+        steps: [
+            {
+                id: 'prepare_content',
+                name: '准备发布内容',
+                description: '确认视频文件和发布信息',
+                tool: 'video-publisher',
+                required_params: ['video_file', 'account'],
+                optional_params: ['title', 'description', 'auto_generate']
+            }
+        ]
+    },
     DOUYIN_CONTENT_CREATION: {
         id: 'douyin-content-creation',
         name: '抖音内容下载与文案生成',
@@ -139,7 +157,14 @@ export const TOOL_CONFIGS = {
         supported_formats: ['video', 'audio'],
         max_file_size: '500MB'
     },
-
+    'video-publisher': {
+        name: '视频发布器',
+        api_endpoint: 'http://localhost:5001/api/upload/simple',
+        timeout: 60000,
+        retry_count: 2,
+        supported_platforms: ['douyin', 'tencent', 'xiaohongshu', 'kuaishou'],
+        max_file_size: '500MB'
+    },
     'content-generator': {
         name: '文案生成器',
         api_endpoint: 'http://localhost:3212/api/llm',

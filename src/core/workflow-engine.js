@@ -1,13 +1,14 @@
 // src/core/workflow-engine.js - MVP版本
 import { DouyinDownloader } from '../tools/douyin-downloader.js';
 import { ContentGenerator } from '../tools/content-generator.js';
-
+import { VideoPublisher } from '../tools/video-publisher.js';
 export class WorkflowEngine {
     constructor() {
         // 初始化工具实例
         this.tools = {
             'douyin-downloader': new DouyinDownloader(),
-            'content-generator': new ContentGenerator()
+            'content-generator': new ContentGenerator(),
+            'video-publisher': new VideoPublisher()
         };
 
         console.log('⚙️ 工作流引擎初始化完成');

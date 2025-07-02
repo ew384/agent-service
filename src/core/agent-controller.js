@@ -162,7 +162,14 @@ export class AgentController {
     // 识别工作流（简化版本 - 关键词匹配）
     async identifyWorkflow(message) {
         const lowerMessage = message.toLowerCase();
-
+        if ((lowerMessage.includes('发布') || lowerMessage.includes('上传')) &&
+            (lowerMessage.includes('视频') || lowerMessage.includes('抖音'))) {
+            return {
+                success: true,
+                workflow: WORKFLOWS.VIDEO_PUBLISH,
+                confidence: 0.9
+            };
+        }
         // 简单关键词匹配
         if ((lowerMessage.includes('抖音') || lowerMessage.includes('douyin')) &&
             (lowerMessage.includes('文案') || lowerMessage.includes('内容'))) {

@@ -34,9 +34,9 @@ echo "🔧 检查环境配置..."
 # 设置默认环境变量
 export AGENT_HTTP_PORT=${AGENT_HTTP_PORT:-3213}
 export AGENT_WS_PORT=${AGENT_WS_PORT:-3214}
-export LLM_API_URL=${LLM_API_URL:-"http://localhost:3212/api/llm"}
+export LLM_API_URL=${LLM_API_URL:-"http://127.0.0.1:3212/api/llm"}
 export LLM_API_KEY=${LLM_API_KEY:-"test1"}
-export LLM_PROVIDER=${LLM_PROVIDER:-"claude"}
+export LLM_PROVIDER=${LLM_PROVIDER:-"deepseek"}
 
 echo "📋 配置信息:"
 echo "   HTTP端口: $AGENT_HTTP_PORT"
@@ -58,7 +58,7 @@ fi
 
 # 检查抖音下载服务
 echo "   检查抖音下载服务..."
-if curl -s -f "http://localhost:3211/api/health" >/dev/null 2>&1; then
+if curl -s -f "http://127.0.0.1:3211/api/health" >/dev/null 2>&1; then
     echo "   ✅ 抖音下载服务可用"
 else
     echo "   ⚠️ 抖音下载服务暂时不可用"

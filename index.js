@@ -146,8 +146,8 @@ const heartbeatInterval = setInterval(() => {
 
 // 启动HTTP服务器
 app.listen(HTTP_PORT, () => {
-    console.log(`🚀 Agent HTTP服务启动: http://localhost:${HTTP_PORT}`);
-    console.log(`📡 Agent WebSocket服务启动: ws://localhost:${WS_PORT}`);
+    console.log(`🚀 Agent HTTP服务启动: http://127.0.0.1:${HTTP_PORT}`);
+    console.log(`📡 Agent WebSocket服务启动: ws://127.0.0.1:${WS_PORT}`);
     console.log(`📋 API文档:`);
     console.log(`   GET  /api/health - 健康检查`);
     console.log(`   GET  /api/workflows - 获取可用工作流`);

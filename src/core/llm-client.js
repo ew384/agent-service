@@ -3,7 +3,7 @@ import fetch from 'node-fetch';
 
 export class LLMClient {
     constructor() {
-        this.apiUrl = process.env.LLM_API_URL || 'http://localhost:3212/api/llm';
+        this.apiUrl = process.env.LLM_API_URL || 'http://127.0.0.1:3212/api/llm';
         this.apiKey = process.env.LLM_API_KEY || 'test1';
         this.provider = process.env.LLM_PROVIDER || 'claude';
 
@@ -94,29 +94,31 @@ export class LLMClient {
     parseContextResponse(llmResponse) {
         try {
             const responseStr = typeof llmResponse === 'string' ? llmResponse : JSON.stringify(llmResponse);
-
-            // 更灵活的JSON提取
-            const jsonMatch = responseStr.match(/\{[\s\S]*?\}(?=\s*$|$)/);
-            if (!jsonMatch) {
-                console.warn('⚠️ 未找到JSON，使用文本解析');
-                return this.parseTextResponse(responseStr);
+            
+            // 更强大的JSON提取
+            let jsonData;
+            
+            // 方法1: 尝试直接解析整个响应
+            try {
+                jsonData = JSON.parse(responseStr);
+            } catch (e) {
+                // 方法2: 查找第一个完整的JSON对象
+                const jsonStart = responseStr.indexOf('{');
+                const jsonEnd = responseStr.lastIndexOf('}') + 1;
+                if (jsonStart !== -1 && jsonEnd > jsonStart) {
+                    jsonData = JSON.parse(responseStr.slice(jsonStart, jsonEnd));
+                } else {
+                    throw new Error('No JSON found');
+                }
             }
 
-            const parsed = JSON.parse(jsonMatch[0]);
-
-            // 映射到标准格式
-            return {
-                action: this.mapToAction(parsed),
-                workflow_type: this.mapToWorkflowType(parsed),
-                all_params: this.extractParams(parsed),
-                missing_params: this.extractMissingParams(parsed),
-                question: parsed["回复用户"] || parsed.question || '请告诉我您需要什么帮助？',
-                reasoning: parsed["分析说明"] || parsed.reasoning || ''
-            };
-
+            // 通用映射逻辑
+            return this.mapLLMResponseToStandardFormat(jsonData);
+            
         } catch (error) {
             console.error('❌ JSON解析失败:', error);
-            return this.parseTextResponse(llmResponse);
+            console.log('📝 原始响应:', llmResponse);
+            return this.fallbackContextParsing(llmResponse);
         }
     }
 
@@ -138,7 +140,25 @@ export class LLMClient {
 
         return 'need_more_info';
     }
-
+    normalizeAction(actionText) {
+        if (!actionText) return 'need_more_info';
+        
+        const text = String(actionText).toLowerCase();
+        
+        if (text.includes('开始') || text.includes('新任务')) {
+            return 'start_workflow';
+        } else if (text.includes('继续')) {
+            return 'continue_workflow';  
+        } else if (text.includes('执行') || text.includes('齐全')) {
+            return 'execute_step';
+        } else if (text.includes('询问') || text.includes('更多')) {
+            return 'need_more_info';
+        } else if (text.includes('对话') || text.includes('聊天')) {
+            return 'chat';
+        }
+        
+        return 'need_more_info';
+    }
     mapToWorkflowType(parsed) {
         const taskType = parsed["需求类型"] || '';
 
@@ -169,7 +189,30 @@ export class LLMClient {
         const missing = parsed["还需要的信息"] || parsed.missing_params || [];
         return Array.isArray(missing) ? missing : [];
     }
-
+    mapLLMResponseToStandardFormat(jsonData) {
+        // 通用字段映射表
+        const fieldMappings = {
+            '需求类型': 'workflow_type',
+            '下一步操作': 'action',
+            '提取的信息': 'all_params', 
+            '还需要的信息': 'missing_params',
+            '回复用户': 'question',
+            '分析说明': 'reasoning'
+        };
+        
+        const result = {};
+        
+        // 动态映射所有字段
+        Object.keys(jsonData).forEach(key => {
+            const mappedKey = fieldMappings[key] || key;
+            result[mappedKey] = jsonData[key];
+        });
+        
+        // 标准化action
+        result.action = this.normalizeAction(result.action || result['下一步操作']);
+        
+        return result;
+    }
     // 纯文本解析备用方案
     parseTextResponse(text) {
         console.log('🔄 使用文本解析模式');
@@ -181,7 +224,7 @@ export class LLMClient {
             return {
                 action: 'start_workflow',
                 workflow_type: 'video_publish',
-                all_params: this.extractParamsFromText(text),
+                all_params: {},//this.extractParamsFromText(text),
                 missing_params: ['video_file', 'title', 'description'],
                 question: '请提供视频文件路径、标题和描述信息。'
             };
@@ -278,14 +321,15 @@ export class LLMClient {
             }
 
             const data = await response.json();
-
+            console.log('🔍 LLM API完整响应:', JSON.stringify(data, null, 2));
             if (!data.success) {
                 throw new Error(data.error || 'LLM API返回错误');
             }
 
             // 🆕 处理对话历史，提取最后一条assistant消息
             let actualResponse = data.response;
-
+            console.log('📥 data.response原始内容:', JSON.stringify(data.response, null, 2));
+            console.log('📥 data.response类型:', typeof data.response);
             if (typeof data.response === 'object' && data.response.messages) {
                 // 找到最后一条assistant消息
                 const messages = data.response.messages;
@@ -299,7 +343,11 @@ export class LLMClient {
                     actualResponse = JSON.stringify(data.response);
                 }
             }
-
+            console.log('🚀 callLLM最终返回:', JSON.stringify({
+                success: true,
+                response: actualResponse,
+                conversationId: data.conversationId || data.response?.id
+            }, null, 2));
             return {
                 success: true,
                 response: actualResponse,

@@ -98,7 +98,9 @@ export class AgentController {
         const workflowMap = {
             'douyin_content_creation': WORKFLOWS.DOUYIN_CONTENT_CREATION,
             'video_publish': WORKFLOWS.VIDEO_PUBLISH,
-            'content_generation': WORKFLOWS.DOUYIN_CONTENT_CREATION // 复用现有工作流
+            'content_generation': WORKFLOWS.DOUYIN_CONTENT_CREATION, // 复用现有工作流
+            '视频发布到社交平台': WORKFLOWS.VIDEO_PUBLISH,
+            '抖音内容下载和创作': WORKFLOWS.DOUYIN_CONTENT_CREATION
         };
 
         return workflowMap[taskType] || null;
@@ -177,7 +179,26 @@ export class AgentController {
     }
 
     async handleStepExecution(session, analysisResult, sendResponse) {
+        // 🆕 添加工作流初始化逻辑（与 handleNeedMoreInfo 保持一致）
+        if (!session.currentWorkflow && analysisResult.workflow_type) {
+            const workflow = this.getWorkflowByType(analysisResult.workflow_type);
+            if (workflow) {
+                session.currentWorkflow = workflow;
+                session.currentStep = 0;
+                session.workflowData = analysisResult.all_params || {};
+
+                console.log(`✅ 设置工作流状态: ${workflow.name}`);
+                console.log(`📋 保存已提取参数:`, session.workflowData);
+            } else {
+                return sendResponse({
+                    type: 'error',
+                    message: '无法识别的工作流类型'
+                });
+            }
+        }
+
         console.log(`🔄 执行步骤处理 - 步骤: ${session.currentWorkflow.steps[session.currentStep].name}`);
+        
         // 更新参数
         session.workflowData = {
             ...session.workflowData,

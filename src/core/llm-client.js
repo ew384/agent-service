@@ -200,6 +200,21 @@ export class LLMClient {
             '分析说明': 'reasoning'
         };
         
+        // 参数键名映射表（中文 -> 英文）
+        const paramMapping = {
+            '账号': 'account',
+            '平台': 'platform', 
+            '文件': 'video_file',
+            '标题': 'title',
+            '描述': 'description',
+            '链接': 'douyin_url',
+            '主题': 'topic',
+            '风格': 'style',
+            '长度': 'length',
+            '关键词': 'keywords',
+            '输出格式': 'output_format'
+        };
+        
         const result = {};
         
         // 动态映射所有字段
@@ -210,6 +225,49 @@ export class LLMClient {
         
         // 标准化action
         result.action = this.normalizeAction(result.action || result['下一步操作']);
+        
+        // 处理参数映射：将中文键名转换为英文
+        if (result.all_params && typeof result.all_params === 'object') {
+            const mappedParams = {};
+            
+            Object.keys(result.all_params).forEach(key => {
+                const mappedKey = paramMapping[key] || key;
+                const value = result.all_params[key];
+                
+                // 只保存非空值
+                if (value !== null && value !== undefined && value !== '') {
+                    mappedParams[mappedKey] = value;
+                }
+            });
+            
+            result.all_params = mappedParams;
+        }
+        
+        // 处理缺失参数映射
+        if (result.missing_params && Array.isArray(result.missing_params)) {
+            result.missing_params = result.missing_params.map(param => {
+                return paramMapping[param] || param;
+            });
+        }
+        
+        // 标准化工作流类型
+        if (result.workflow_type) {
+            const workflowTypeMapping = {
+                '视频发布到社交平台': 'video_publish',
+                '抖音内容下载和创作': 'douyin_content_creation', 
+                '文案生成': 'content_generation',
+                '抖音内容创作': 'douyin_content_creation',
+                '视频发布': 'video_publish',
+                '内容发布': 'video_publish'
+            };
+            
+            result.workflow_type = workflowTypeMapping[result.workflow_type] || result.workflow_type;
+        }
+        
+        console.log('🔄 参数映射结果:', {
+            原始数据: jsonData,
+            映射后: result
+        });
         
         return result;
     }

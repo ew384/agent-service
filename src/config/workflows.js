@@ -151,7 +151,7 @@ export const WORKFLOWS = {
 export const TOOL_CONFIGS = {
     'douyin-downloader': {
         name: '抖音下载器',
-        api_endpoint: 'http://localhost:3211/api/download/douyin',
+        api_endpoint: 'http://127.0.0.1:3211/api/download/douyin',
         timeout: 30000,
         retry_count: 2,
         supported_formats: ['video', 'audio'],
@@ -159,7 +159,7 @@ export const TOOL_CONFIGS = {
     },
     'video-publisher': {
         name: '视频发布器',
-        api_endpoint: 'http://localhost:5001/api/upload/simple',
+        api_endpoint: 'http://127.0.0.1:5001/api/upload/simple',
         timeout: 60000,
         retry_count: 2,
         supported_platforms: ['douyin', 'tencent', 'xiaohongshu', 'kuaishou'],
@@ -167,7 +167,7 @@ export const TOOL_CONFIGS = {
     },
     'content-generator': {
         name: '文案生成器',
-        api_endpoint: 'http://localhost:3212/api/llm',
+        api_endpoint: 'http://127.0.0.1:3212/api/llm',
         timeout: 20000,
         retry_count: 2,
         supported_styles: ['professional', 'casual', 'creative', 'travel'],
@@ -176,7 +176,7 @@ export const TOOL_CONFIGS = {
 
     'tts-generator': {
         name: 'TTS语音生成器',
-        api_endpoint: 'http://localhost:8000/tts_with_character',
+        api_endpoint: 'http://127.0.0.1:8000/tts_with_character',
         timeout: 30000,
         retry_count: 1,
         supported_voices: ['JackMa', 'default'],
@@ -185,7 +185,7 @@ export const TOOL_CONFIGS = {
 
     'video-composer': {
         name: '视频合成器',
-        api_endpoint: 'http://localhost:8001/api/v1/video/create',
+        api_endpoint: 'http://127.0.0.1:8001/api/v1/video/create',
         timeout: 120000,
         retry_count: 1,
         supported_formats: ['mp4'],
@@ -195,7 +195,7 @@ export const TOOL_CONFIGS = {
 
     'platform-publisher': {
         name: '多平台发布器',
-        api_endpoint: 'http://localhost:3211/api/workflow/multi-execute-concurrent',
+        api_endpoint: 'http://127.0.0.1:3211/api/workflow/multi-execute-concurrent',
         timeout: 180000,
         retry_count: 1,
         supported_platforms: ['douyin', 'xiaohongshu', 'wechat'],

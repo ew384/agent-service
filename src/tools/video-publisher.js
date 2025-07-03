@@ -44,7 +44,7 @@ export class VideoPublisher {
             message: '正在发布视频...'
         });
 
-        const response = await fetch('http://localhost:5001/api/upload/simple', {
+        const response = await fetch('http://127.0.0.1:5001/api/upload/simple', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
